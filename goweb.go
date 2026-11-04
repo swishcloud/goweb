@@ -41,7 +41,7 @@ func (engine *Engine) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 		timeout <- true
 	}()
 	context := &Context{Engine: engine, Request: req, CT: time.Now(), Signal: make(chan int), Data: make(map[string]interface{}), FuncMap: map[string]interface{}{}}
-	context.Writer = &ResponseWriter{ResponseWriter: w, ctx: context}
+	context.Writer = w
 	context.index = -1
 	context.FuncMap["formatTime"] = func(t time.Time, layout string) (string, error) {
 		if layout == "" {
@@ -127,7 +127,6 @@ func safelyHandle(engine *Engine, c *Context) {
 				engine.Logger.Println(err)
 			}
 		}
-		c.Writer.Close()
 	}()
 	defer func() {
 		if err := recover(); err != nil {

@@ -13,12 +13,12 @@ import (
 	"strings"
 	"time"
 
-	"github.com/dgrijalva/jwt-go"
 	"github.com/google/uuid"
 	"github.com/lestrrat/go-jwx/jwk"
 	"github.com/swishcloud/gostudy/common"
 	"github.com/swishcloud/gostudy/keygenerator"
 
+	"github.com/golang-jwt/jwt/v5"
 	"github.com/swishcloud/goweb"
 	"golang.org/x/oauth2"
 )
@@ -62,7 +62,7 @@ func Login(ctx *goweb.Context, token *oauth2.Token, jwk_json_url string, expire_
 	session := session{}
 	session.id = uuid.New().String()
 	session.token = token
-	session.Claims = extractIdTokenCliams(token.Extra("id_token").(string), jwk_json_url)
+	session.Claims = extractIdTokenClaims(token.Extra("id_token").(string), jwk_json_url)
 	session.Data = map[string]interface{}{}
 	var cookie http.Cookie
 	if expire_time == nil {
@@ -156,34 +156,55 @@ func init() {
 	access_token_cookie_name = "access_token_" + k
 }
 
-func extractIdTokenCliams(tokenString string, jwk_json_url string) map[string]interface{} {
-	jwk, err := jwk.Fetch(jwk_json_url)
+func extractIdTokenClaims(tokenString string, jwkJSONURL string) map[string]interface{} {
+	keySet, err := jwk.Fetch(jwkJSONURL)
 	if err != nil {
 		panic(err)
 	}
-	k, err := jwk.Keys[0].Materialize()
-	pk := k.(*rsa.PublicKey)
-	// Parse takes the token string and a function for looking up the key. The latter is especially
-	// useful if you use multiple keys for your application.  The standard is to use 'kid' in the
-	// head of the token to identify which key to use, but the parsed token (head and claims) is provided
-	// to the callback, providing flexibility.
-	token, err := jwt.Parse(tokenString, func(token *jwt.Token) (interface{}, error) {
-		// Don't forget to validate the alg is what you expect:
-		if _, ok := token.Method.(*jwt.SigningMethodRSA); !ok {
-			return nil, fmt.Errorf("Unexpected signing method: %v", token.Header["alg"])
-		}
 
-		// hmacSampleSecret is a []byte containing your secret, e.g. []byte("my_secret_key")
-		return pk, nil
-	})
+	if len(keySet.Keys) == 0 {
+		panic("JWK set contains no keys")
+	}
+
+	k, err := keySet.Keys[0].Materialize()
 	if err != nil {
 		panic(err)
 	}
-	if claims, ok := token.Claims.(jwt.MapClaims); ok && token.Valid {
-		return claims
-	} else {
-		return nil
+
+	pk, ok := k.(*rsa.PublicKey)
+	if !ok {
+		panic(fmt.Errorf("expected RSA public key, got %T", k))
 	}
+
+	token, err := jwt.Parse(
+		tokenString,
+		func(token *jwt.Token) (any, error) {
+			// Verify that the signing method is RSA.
+			if _, ok := token.Method.(*jwt.SigningMethodRSA); !ok {
+				return nil, fmt.Errorf(
+					"unexpected signing method: %v",
+					token.Header["alg"],
+				)
+			}
+
+			return pk, nil
+		},
+		jwt.WithValidMethods([]string{
+			jwt.SigningMethodRS256.Alg(),
+			jwt.SigningMethodRS384.Alg(),
+			jwt.SigningMethodRS512.Alg(),
+		}),
+	)
+
+	if err != nil {
+		panic(err)
+	}
+
+	if claims, ok := token.Claims.(jwt.MapClaims); ok && token.Valid {
+		return map[string]interface{}(claims)
+	}
+
+	return nil
 }
 func AuthCodeURL(ctx *goweb.Context, conf *oauth2.Config) (string, error) {
 	//state

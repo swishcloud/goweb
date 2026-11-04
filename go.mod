@@ -3,7 +3,7 @@ module github.com/swishcloud/goweb
 go 1.23.0
 
 require (
-	github.com/dgrijalva/jwt-go v3.2.0+incompatible
+	github.com/golang-jwt/jwt/v5 v5.3.1
 	github.com/google/uuid v1.3.0
 	github.com/lestrrat/go-jwx v0.0.0-20210302221443-a9d01c1b7121
 	github.com/microcosm-cc/bluemonday v1.0.27
